@@ -1,0 +1,253 @@
+#!/bin/bash
+
+# setup_vision_vm - Script to install development tools on Ubuntu Server VM
+# This script runs in Proxmox shell and installs tools on the VM via SSH
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Logging function
+log() {
+    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
+
+error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+# Function to execute commands on the VM
+run_on_vm() {
+    local cmd="$1"
+    local ssh_opts=""
+    
+    if [[ -n "$SSH_KEY" ]]; then
+        ssh_opts="-i $SSH_KEY"
+    elif [[ -n "$VM_PASSWORD" ]]; then
+        # Check if sshpass is available
+        if ! command -v sshpass &> /dev/null; then
+            error "sshpass is required for password authentication. Install it with: apt install sshpass"
+            exit 1
+        fi
+        ssh_opts="-o PasswordAuthentication=yes"
+        echo "$VM_PASSWORD" | sshpass -p "$VM_PASSWORD" ssh $ssh_opts -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $VM_USER@$VM_IP "$cmd"
+        return
+    else
+        error "Either SSH_KEY or VM_PASSWORD must be set for authentication"
+        exit 1
+    fi
+    
+    ssh $ssh_opts -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $VM_USER@$VM_IP "$cmd"
+}
+
+# Configuration Variables
+VM_ID="144"                       # Set this to your VM ID (e.g., "100")
+VM_USER="antibound"               # Default user for Ubuntu Server
+VM_IP="192.168.87.130"                       # Set this to your VM's IP address
+SSH_KEY=""                     # Optional: Path to SSH private key
+VM_PASSWORD=""  # Set this to your VM user password
+
+# Check if VM_ID is set
+if [[ -z "$VM_ID" ]]; then
+    error "VM_ID variable is not set. Please set it to your VM ID."
+    error "Example: VM_ID=\"100\""
+    exit 1
+fi
+
+# Check if VM_IP is set
+if [[ -z "$VM_IP" ]]; then
+    error "VM_IP variable is not set. Please set it to your VM's IP address."
+    error "Example: VM_IP=\"192.168.1.100\""
+    exit 1
+fi
+
+# Check authentication method
+if [[ -z "$SSH_KEY" && -z "$VM_PASSWORD" ]]; then
+    error "Authentication required. Please set either:"
+    error "  - SSH_KEY: Path to SSH private key"
+    error "  - VM_PASSWORD: VM user password"
+    exit 1
+fi
+
+# Check if VM is running
+log "Checking if VM $VM_ID is running..."
+if ! qm status $VM_ID | grep -q "status.*running"; then
+    error "VM $VM_ID is not running. Please start it first: qm start $VM_ID"
+    exit 1
+fi
+
+# Test SSH connectivity
+log "Testing SSH connectivity to VM..."
+if ! run_on_vm "echo 'SSH connection successful'" &> /dev/null; then
+    error "Cannot connect to VM via SSH. Please check:"
+    error "  - VM IP address: $VM_IP"
+    error "  - SSH service is running on VM"
+    error "  - Authentication credentials are correct"
+    exit 1
+fi
+
+log "Starting installation of development tools on VM $VM_ID ($VM_IP)"
+
+# Update package lists
+log "Updating package lists on VM..."
+run_on_vm "sudo apt update"
+
+# Install basic dependencies
+log "Installing basic dependencies on VM..."
+run_on_vm "sudo apt install -y curl wget gnupg lsb-release software-properties-common apt-transport-https ca-certificates unzip git build-essential"
+
+# Install Git (if not already installed)
+log "Installing Git on VM..."
+run_on_vm "sudo apt install -y git"
+
+# Verify Git installation
+log "Verifying Git installation..."
+if run_on_vm "command -v git" &> /dev/null; then
+    GIT_VERSION=$(run_on_vm "git --version")
+    log "Git installed successfully: $GIT_VERSION"
+else
+    error "Git installation failed"
+    exit 1
+fi
+
+# Install Ansible
+log "Installing Ansible on VM..."
+run_on_vm "sudo apt install -y ansible"
+
+# Verify Ansible installation
+log "Verifying Ansible installation..."
+if run_on_vm "command -v ansible" &> /dev/null; then
+    ANSIBLE_VERSION=$(run_on_vm "ansible --version | head -n1")
+    log "Ansible installed successfully: $ANSIBLE_VERSION"
+else
+    error "Ansible installation failed"
+    exit 1
+fi
+
+# Install Terraform
+log "Installing Terraform on VM..."
+
+# Add HashiCorp GPG key
+run_on_vm "curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg"
+
+# Add HashiCorp repository
+run_on_vm "echo 'deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main' | sudo tee /etc/apt/sources.list.d/hashicorp.list"
+
+# Update package lists
+run_on_vm "sudo apt update"
+
+# Install Terraform
+run_on_vm "sudo apt install -y terraform"
+
+# Verify Terraform installation
+log "Verifying Terraform installation..."
+if run_on_vm "command -v terraform" &> /dev/null; then
+    TERRAFORM_VERSION=$(run_on_vm "terraform --version | head -n1")
+    log "Terraform installed successfully: $TERRAFORM_VERSION"
+else
+    error "Terraform installation failed"
+    exit 1
+fi
+
+# Install Infisical CLI
+log "Installing Infisical CLI on VM..."
+
+# Set version
+INFISICAL_VERSION="0.10.4"
+
+# Detect architecture on VM
+ARCH=$(run_on_vm "uname -m")
+case $ARCH in
+    x86_64)
+        ARCH="amd64"
+        ;;
+    aarch64)
+        ARCH="arm64"
+        ;;
+    *)
+        error "Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
+
+# Download Infisical CLI
+INFISICAL_URL="https://github.com/Infisical/infisical/releases/download/v${INFISICAL_VERSION}/infisical_${INFISICAL_VERSION}_linux_${ARCH}.tar.gz"
+log "Downloading Infisical CLI from: $INFISICAL_URL"
+
+run_on_vm "cd /tmp && wget -O infisical.tar.gz '$INFISICAL_URL'"
+
+# Extract and install
+run_on_vm "cd /tmp && tar -xzf infisical.tar.gz && sudo mv infisical /usr/local/bin/ && sudo chmod +x /usr/local/bin/infisical"
+
+# Clean up
+run_on_vm "rm -f /tmp/infisical.tar.gz"
+
+# Verify Infisical CLI installation
+log "Verifying Infisical CLI installation..."
+if run_on_vm "command -v infisical" &> /dev/null; then
+    INFISICAL_VERSION_OUTPUT=$(run_on_vm "infisical --version")
+    log "Infisical CLI installed successfully: $INFISICAL_VERSION_OUTPUT"
+else
+    error "Infisical CLI installation failed"
+    exit 1
+fi
+
+# Install additional useful tools
+log "Installing additional useful tools on VM..."
+run_on_vm "sudo apt install -y vim htop tree jq yq python3-pip python3-venv"
+
+# Install Python packages that might be useful
+log "Installing Python packages on VM..."
+run_on_vm "sudo pip3 install --break-system-packages requests pyyaml jinja2"
+
+# Create a non-root user for development (optional)
+log "Creating development user on VM..."
+if ! run_on_vm "id devuser" &>/dev/null; then
+    run_on_vm "sudo useradd -m -s /bin/bash devuser"
+    run_on_vm "sudo usermod -aG sudo devuser"
+    log "Created user 'devuser' with sudo privileges"
+    warning "Remember to set a password for devuser: ssh $VM_USER@$VM_IP 'sudo passwd devuser'"
+else
+    info "User 'devuser' already exists"
+fi
+
+# Set up SSH directory for devuser
+run_on_vm "sudo mkdir -p /home/devuser/.ssh"
+run_on_vm "sudo chown devuser:devuser /home/devuser/.ssh"
+run_on_vm "sudo chmod 700 /home/devuser/.ssh"
+
+# Final verification
+log "Final verification of installed tools on VM:"
+echo "=================================="
+echo "Git: $(run_on_vm "git --version")"
+echo "Ansible: $(run_on_vm "ansible --version | head -n1")"
+echo "Terraform: $(run_on_vm "terraform --version | head -n1")"
+echo "Infisical CLI: $(run_on_vm "infisical --version")"
+echo "=================================="
+
+log "Installation completed successfully!"
+info "You can now use the following commands on the VM:"
+info "  - git: Version control"
+info "  - ansible: Configuration management"
+info "  - terraform: Infrastructure as Code"
+info "  - infisical: Secrets management"
+
+warning "Don't forget to:"
+warning "  1. Set a password for the devuser: ssh $VM_USER@$VM_IP 'sudo passwd devuser'"
+warning "  2. Configure SSH keys if needed"
+warning "  3. Update system: ssh $VM_USER@$VM_IP 'sudo apt upgrade'"
+
+log "Script execution completed!"
