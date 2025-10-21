@@ -2,7 +2,7 @@ terraform {
   required_providers {
     proxmox = {
       source  = "Telmate/proxmox"
-      version = "~> 2.9"
+      version = "3.0.2-rc05"
     }
   }
 }
@@ -28,15 +28,16 @@ resource "proxmox_vm_qemu" "gitea" {
   
   # Storage
   disk {
-    slot    = 0
-    size    = "25G"
-    type    = "scsi"
-    storage = "local-lvm"
-    iothread = 1
+    slot      = 0
+    size      = "25G"
+    type      = "scsi"
+    storage   = "local-lvm"
+    iothread  = true
   }
   
   # Network
   network {
+    id     = 0
     model  = "virtio"
     bridge = "vmbr0"
   }
