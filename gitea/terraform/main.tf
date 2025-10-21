@@ -14,24 +14,6 @@ provider "proxmox" {
   pm_tls_insecure = true
 }
 
-variable "proxmox_api_url" {
-  description = "Proxmox API URL"
-  type        = string
-  default     = "https://192.168.87.75:8006/api2/json"
-}
-
-variable "proxmox_username" {
-  description = "Proxmox username"
-  type        = string
-  sensitive   = true
-}
-
-variable "proxmox_password" {
-  description = "Proxmox password"
-  type        = string
-  sensitive   = true
-}
-
 resource "proxmox_vm_qemu" "gitea" {
   name        = "gitea"
   target_node = "jarvis"
