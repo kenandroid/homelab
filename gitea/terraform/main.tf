@@ -22,15 +22,17 @@ resource "proxmox_vm_qemu" "gitea" {
   clone = "ubuntu-template"
   
   # VM Configuration
-  cores   = 2
+  cpu {
+    cores = 2
+    sockets = 1
+  }
   memory  = 4096
-  sockets = 1
   
   # Storage
   disk {
-    slot      = 0
+    slot      = "scsi0"
     size      = "25G"
-    type      = "scsi"
+    type      = "disk"
     storage   = "local-lvm"
     iothread  = true
   }
