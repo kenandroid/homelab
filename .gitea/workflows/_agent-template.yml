@@ -1,0 +1,2 @@
+# This file is a shared reference — actual workflows import their own agent name.
+# Each agent workflow follows the same structure below.
