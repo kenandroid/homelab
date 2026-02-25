@@ -1,0 +1,42 @@
+name: Team Lead — Daily
+
+on:
+  schedule:
+    # 10 PM Eastern Standard Time = 03:00 UTC
+    # Adjust to 02:00 during EDT (daylight saving, Mar–Nov)
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}   # allow manual trigger from Gitea UI
+
+jobs:
+  team-lead:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      JIRA_BASE_URL:               ${{ secrets.JIRA_BASE_URL }}
+      JIRA_EMAIL:                  ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN:              ${{ secrets.JIRA_API_TOKEN }}
+      GITEA_BASE_URL:              ${{ secrets.GITEA_BASE_URL }}
+      GITEA_TOKEN:                 ${{ secrets.GITEA_TOKEN }}
+      GITEA_ORG:                   ${{ secrets.GITEA_ORG }}
+      HLP_PROJECT_KEY:             ${{ secrets.HLP_PROJECT_KEY }}
+      JIRA_FIELD_TARGET_PROJECT_KEY: ${{ secrets.JIRA_FIELD_TARGET_PROJECT_KEY }}
+      JIRA_FIELD_REPO_NAME:        ${{ secrets.JIRA_FIELD_REPO_NAME }}
+      # Add one PROJECT_REPO_MAP_XYZ secret per project:
+      # PROJECT_REPO_MAP_XYZ: my-gitea-repo-name
+
+    steps:
+      - name: Checkout agents repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Team Lead
+        working-directory: agents
+        run: python team_lead.py

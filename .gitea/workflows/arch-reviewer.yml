@@ -1,0 +1,39 @@
+name: Arch Reviewer
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  arch-reviewer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      JIRA_BASE_URL:     ${{ secrets.JIRA_BASE_URL }}
+      JIRA_EMAIL:        ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN:    ${{ secrets.JIRA_API_TOKEN }}
+      GITEA_BASE_URL:    ${{ secrets.GITEA_BASE_URL }}
+      GITEA_TOKEN:       ${{ secrets.GITEA_TOKEN }}
+      GITEA_ORG:         ${{ secrets.GITEA_ORG }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    steps:
+      - name: Checkout agents repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run Arch Reviewer
+        working-directory: agents
+        run: python arch_reviewer.py
